@@ -4,9 +4,16 @@ import os
 import json
 import xerox
 import tempfile
-
+from subprocess import Popen, PIPE
 #file format not stable!
 hfile = expanduser("~/histfile_test")
+nhistory = 30
+
+selections = {
+    '*': 'primary',
+    '+': 'clipboard'
+}
+
 @contextmanager
 def HistoryFile(fn, mode='r'):
     try:
@@ -26,32 +33,66 @@ def HistoryFile(fn, mode='r'):
 
 class NvimYanklist(object):
     def __init__(self, vim):
-        print "xx"
-        self.provides = ['clipboard_get', 'clipboard_set', 'yanklist_candidates']
+        self.provides = ['clipboard']
+        self.choice = None
 
         vim.command("let g:yanklist_channel = {}".format(vim.channel_id)) #FIXME
 
-    def clipboard_get(self):
-        return xerox.paste().split('\n')
+    def sel_name(self, reg):
+        return 'clipboard' if reg == '+' else 'primary'
+        
 
-    def clipboard_set(self, lines):
-        txt = '\n'.join(lines)
-        xerox.copy(txt)
+    def clipboard_get(self, reg):
+        if reg in selections:
+            txt = Popen(['xclip', '-selection', selections[reg], '-o'], stdout=PIPE).communicate()[0]
+            # emulate vim behavior
+            if txt.endswith('\n'):
+                txt = txt[:-1]
+                regtype = 'V'
+            else:
+                regtype = 'v'
+            return txt.split('\n'), regtype
+        else:
+            if self.choice is not None:
+                c = self.choice
+                self.choice = None
+                return c
+            with HistoryFile(hfile) as hlist:
+                if len(hlist) == 0:
+                    return ''
+                return hlist[0]
+
+    def clipboard_set(self, lines, regtype, reg):
+        if reg in selections:
+            txt = '\n'.join([line for line in lines])
+            if regtype == 'V':
+                txt = txt + '\n'
+            _cmd = ['xclip', '-selection', selections[reg]]
+            Popen(_cmd, stdin=PIPE).communicate(txt)
+            if reg == '*': return
+
         with HistoryFile(hfile,'w') as hlist:
-            try:
-                hlist.remove(txt)
-            except ValueError:
-                pass
-            hlist.insert(0,txt)
+            for i,val in enumerate(list(hlist)):
+                if val[0] == lines:
+                    del hlist[i]
+                    break
+            hlist.insert(0, [lines, regtype])
+            if len(hlist) > nhistory:
+                del hlist[nhistory+1:]
 
+    # @rpc_handler
+    def yanklist_choose(self, c):
+        self.choice = c
+
+    # @rpc_handler
     def yanklist_candidates(self):
         c = []
         try:
             with HistoryFile(hfile) as hlist:
                 for i,t in enumerate(hlist):
-                    c.append({'action__text': t,
-                        'action__regtype': ('V' if ('\n' in t) else 'v'),
-                        'word': '{} {!r}'.format(i+1, t)})
+                    txt = '\n'.join(t[0])
+                    c.append({'action__value': t,
+                        'word': '{} {!r}'.format(i+1, '\n'.join(t[0]))})
             return c
         except:
             import traceback

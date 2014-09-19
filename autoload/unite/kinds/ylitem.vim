@@ -17,16 +17,10 @@ let s:kind.action_table.paste = {
       \ }
 
 function! s:kind.action_table.paste.func(candidate) "{{{
-    let contents = a:candidate.action__text
-    let regtype = a:candidate.action__regtype
-    let old_reg = [getreg('"'), getregtype('"')]
+    let value = a:candidate.action__value
 
-    call setreg('"', contents, regtype)
-    try
-      execute 'normal! ""p'
-    finally
-      call setreg('"', old_reg[0], old_reg[1])
-    endtry
+    call rpcrequest(g:yanklist_channel, "yanklist_choose", value)
+    execute 'normal! p'
 
     " Open folds.
     normal! zv
