@@ -14,6 +14,14 @@ selections = {
     '+': 'clipboard'
 }
 
+modemap = {
+    'v': 'c',
+    'V': 'L',
+}
+
+#TODO: config interface?
+stickychoice = True
+
 @contextmanager
 def HistoryFile(fn, mode='r'):
     try:
@@ -30,6 +38,9 @@ def HistoryFile(fn, mode='r'):
             tf.write(js)
             tempname = tf.name
         os.rename(tempname, fn)
+
+# pure documentative for now
+rpcHandler = lambda f: f
 
 class NvimYanklist(object):
     def __init__(self, vim):
@@ -80,19 +91,24 @@ class NvimYanklist(object):
             if len(hlist) > nhistory:
                 del hlist[nhistory+1:]
 
-    # @rpc_handler
+    @rpcHandler
     def yanklist_choose(self, c):
-        self.choice = c
+        if stickychoice:
+            # push pasted to front
+            self.clipboard_set(c[0],c[1], '"')
+        else:
+            self.choice = c
 
-    # @rpc_handler
+    @rpcHandler
     def yanklist_candidates(self):
         c = []
         try:
             with HistoryFile(hfile) as hlist:
                 for i,t in enumerate(hlist):
+                    m = modemap.get(t[1],t[1])
                     txt = '\n'.join(t[0])
                     c.append({'action__value': t,
-                        'word': '{} {!r}'.format(i+1, '\n'.join(t[0]))})
+                        'word': '{} {} {!r}'.format(i+1, m, '\n'.join(t[0]))})
             return c
         except:
             import traceback
